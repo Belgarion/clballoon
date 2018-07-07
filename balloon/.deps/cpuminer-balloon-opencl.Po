@@ -65,8 +65,8 @@ balloon/cpuminer-balloon-opencl.o: balloon/balloon-opencl.c \
  /usr/include/x86_64-linux-gnu/bits/local_lim.h \
  /usr/include/linux/limits.h \
  /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
- /usr/include/openssl/sha.h balloon/../sha256-sse/sha256.h \
- /usr/include/CL/cl.h /usr/include/CL/cl_platform.h \
+ /usr/include/openssl/sha.h /usr/include/CL/cl.h \
+ /usr/include/CL/cl_platform.h \
  /usr/lib/gcc/x86_64-linux-gnu/5/include/xmmintrin.h \
  /usr/lib/gcc/x86_64-linux-gnu/5/include/mmintrin.h \
  /usr/lib/gcc/x86_64-linux-gnu/5/include/mm_malloc.h \
@@ -250,8 +250,6 @@ balloon/balloon.h:
 /usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
 
 /usr/include/openssl/sha.h:
-
-balloon/../sha256-sse/sha256.h:
 
 /usr/include/CL/cl.h:
 

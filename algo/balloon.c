@@ -13,7 +13,7 @@
 #define PRINT_ENDIANDATA
 uint32_t prev_pdata[20][10];
 int scanhash_balloon(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, uint32_t num_cuda_threads, uint32_t num_cuda_blocks) {
-	printf("scanhash_balloon: thr_id: %d, num_cuda_threads: %d, num_cuda_blocks: %d\n", thr_id, num_cuda_threads, num_cuda_blocks);
+	printf("scanhash_balloon: thr_id: %d, num_threads: %d, num_blocks: %d\n", thr_id, num_cuda_threads, num_cuda_blocks);
 	uint32_t _ALIGN(128) hash32[8];
 	uint32_t _ALIGN(128) orighash32[8];
 	uint32_t _ALIGN(128) sslhash32[8];
@@ -72,7 +72,7 @@ printf("after balloon_opencl_init\n");
 #ifdef CUDA
 		uint32_t is_winning = 0;
 		uint32_t winning_nonce = balloon_128_cuda(thr_id, (unsigned char *)endiandata, (unsigned char*)cudahash32, ptarget, max_nonce, num_cuda_threads, &is_winning, num_cuda_blocks);
-		printf("cudahash: ");
+		printf("openclhash: ");
 		for (int i = 0; i < 8; i++) {
 			printf("%x ", cudahash32[i]);
 		}
@@ -103,7 +103,7 @@ printf("after balloon_opencl_init\n");
 			}
 			printf("verify_successful\n");
 			if (!verify_successful) {
-				printf("cudahash: ");
+				printf("openclhash: ");
 				for (int i = 0; i < 8; i++) {
 					printf("%x ", cudahash32[i]);
 				}
