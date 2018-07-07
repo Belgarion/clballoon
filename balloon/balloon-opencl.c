@@ -23,16 +23,6 @@ char val[val_size];
 #define MAX_SOURCE_SIZE (0x10000000)
 char *sourcepath= "balloon/balloon-opencl.cl";
 
-#define __global__
-#define __device__
-#define __constant__
-
-__global__ void conv_onethread(int n,int fn, const float * signal, const float * filter, float * retSignal);
-__device__ void cuda_hash_state_mix (struct hash_state *s, int32_t mixrounds, uint64_t *prebuf_le);
-__device__ void cuda_hash_state_extract (const struct hash_state *s, uint8_t out[BLOCK_SIZE]);
-__device__ void cuda_compress (uint64_t *counter, uint8_t *out, const uint8_t *blocks[], size_t blocks_to_comp);
-__device__ void cuda_expand (uint64_t *counter, uint8_t *buf, size_t blocks_in_buf);
-__device__ void cuda_hash_state_fill (struct hash_state *s, const uint8_t *in, size_t inlen, int32_t t_cost, int64_t s_cost);
 void update_device_data(int gpuid);
 
 #define DEBUG
@@ -40,21 +30,18 @@ void update_device_data(int gpuid);
 //#define CUDA_OUTPUT
 //#define LOWMEM
 
-#define PREBUF_LEN 409600
+#define PREBUF_LEN 393216
 uint64_t host_prebuf_le[20][PREBUF_LEN / 8];
 uint8_t host_prebuf_filled[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 #define BLOCK_SIZE (32)
 
 cl_mem device_prebuf_le[20];
 cl_mem device_winning_nonce[20];
-cl_mem device_sbuf[20];
-struct hash_state *device_s[20];
 cl_mem device_target[20];
 cl_mem device_is_winning[20];
 cl_mem device_out[20];
 cl_mem device_input[20];
 cl_mem device_hs_sbufs[20];
-cl_mem device_sbufs[20];
 
 uint8_t balloon_inited[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 uint8_t syncmode_set[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
@@ -90,26 +77,13 @@ uint8_t opencl_inited = 0;
 cl_command_queue command_queue;
 cl_kernel kernel;
 cl_context context;
-int *A, *B, *OUT; // TODO: REMOVE
 FILE *fp;
-cl_mem a_mem_obj, b_mem_obj, c_mem_obj; // TODO: REMOVE
 const int LIST_SIZE = 1024; // TODO: REMOVE
 int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks) {
     DECLARE_CHECK;
 	printf("gpuid: %d, num_threads: %d, num_blocks: %d\n", gpuid, num_threads, num_blocks);
 
 	if (!opencl_inited) {
-		// Create the two input vectors
-		A = malloc(sizeof(int)*LIST_SIZE);
-		B = malloc(sizeof(int)*LIST_SIZE);
-
-		// Read the memory buffer C on the device to the local variable C
-		OUT = malloc(sizeof(int)*LIST_SIZE);
-
-		for(int i = 0; i < LIST_SIZE; i++) {
-		A[i] = i;
-		B[i] = LIST_SIZE - i;
-		}
 		printf("gpuid: %d, num_threads: %d, num_blocks: %d\n", gpuid, num_threads, num_blocks);
 
 		// Load the kernel source code into the array source_str
@@ -212,17 +186,14 @@ int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks) {
 	if (!balloon_inited[gpuid]) {
 		printf("Initiated GPU %d\n", gpuid);
 		device_prebuf_le[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, PREBUF_LEN/8 * sizeof(uint64_t), NULL, NULL);
-		device_sbuf[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, /*s.n_blocks*/4096 * BLOCK_SIZE, NULL, NULL);
 		device_is_winning[gpuid] = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(uint32_t), NULL, NULL);
 		device_winning_nonce[gpuid] = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(uint32_t), NULL, NULL);
-		device_s[gpuid] = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(struct hash_state), NULL, NULL);
 		device_target[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, 8*sizeof(uint32_t), NULL, NULL);
 		device_out[gpuid] = clCreateBuffer(context, CL_MEM_WRITE_ONLY, BLOCK_SIZE * sizeof(uint8_t), NULL, NULL);
 		device_input[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, /*len*/80, NULL, NULL);
 		printf("Allocating %u bytes to device_hs_sbufs (num_threads %d, num_blocks %d)\n", num_threads*num_blocks*4096*BLOCK_SIZE, num_threads, num_blocks);
 		device_hs_sbufs[gpuid] = clCreateBuffer(context, CL_MEM_READ_WRITE, num_threads * num_blocks * 4096 * BLOCK_SIZE, NULL, NULL);
 
-		a_mem_obj = clCreateBuffer(context, CL_MEM_READ_WRITE, 10, NULL, NULL);
 		balloon_inited[gpuid] = 1;
 	}
     // Set the arguments of the kernel
@@ -261,8 +232,6 @@ int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks) {
 	// num_blocks
 	cl_int cl_blocks = num_blocks;
     CHECK_clSetKernelArg(kernel, 13, sizeof(cl_int), &cl_blocks, err_clSetKernelArg);
-	// sbufs
-    CHECK_clSetKernelArg(kernel, 14, sizeof(cl_mem), &device_sbuf[gpuid], err_clSetKernelArg);
 
 
 
@@ -348,28 +317,16 @@ void update_device_data(int gpuid) {
 
 void balloon_cuda_free(int gpuid) {
 	//cudaFree(device_prebuf_le[gpuid]);
-	//cudaFree(device_sbuf[gpuid]);
-	//cudaFree(device_s[gpuid]);
 	//cudaFree(device_winning_nonce[gpuid]);
 	//cudaFree(device_is_winning[gpuid]);
 	//cudaFree(device_out[gpuid]);
 	//cudaFree(device_input[gpuid]);
-#ifdef LOWMEM
-	//cudaFree(device_sbufs[gpuid]);
-#endif
 	//balloon_inited = 0;
 }
 
 uint32_t balloon_128_cuda (int gpuid, unsigned char *input, unsigned char *output, uint32_t *target, uint32_t max_nonce, uint32_t num_threads, uint32_t *is_winning, uint32_t num_blocks) {
 	return cuda_balloon (gpuid, input, output, 80, 128, 4, target, max_nonce, num_threads, is_winning, num_blocks);
 }
-
-//#define NUM_THREADS 256
-//#define NUM_THREADS 384
-//#define NUM_THREADS 384
-//#define NUM_BLOCKS 480
-//#define NUM_BLOCKS 48
-
 
 uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, int32_t len, int64_t s_cost, int32_t t_cost, uint32_t *target, uint32_t max_nonce, uint32_t num_threads, uint32_t *ret_is_winning, uint32_t num_blocks) {
 #ifdef DEBUG
@@ -385,7 +342,7 @@ uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, in
 	uint8_t *pc_sbuf = s.buffer;
 
 #ifdef DEBUG
-	if (s.n_blocks > 4096) printf("s.n_blocks = %llu\n", s.n_blocks);
+	if (s.n_blocks > 4096) printf("s.n_blocks = %lu\n", s.n_blocks);
 #endif
 
 	uint32_t first_nonce = ((input[76] << 24) | (input[77] << 16) | (input[78] << 8) | input[79]);
@@ -404,19 +361,15 @@ uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, in
 	cl_int cl_max_nonce = max_nonce;
     clSetKernelArg(kernel, 7, sizeof(cl_int), &cl_max_nonce);
 
-    clEnqueueWriteBuffer(command_queue, device_input[gpuid], CL_TRUE, 0, len, input, 0, NULL, NULL);
-    //clEnqueueWriteBuffer(command_queue, device_prebuf_le[gpuid], CL_TRUE, 0, PREBUF_LEN, host_prebuf_le[gpuid], 0, NULL, NULL);
-	clEnqueueWriteBuffer(command_queue, device_sbuf[gpuid], CL_TRUE, 0, s.n_blocks*BLOCK_SIZE, s.buffer, 0, NULL, NULL);
-	clEnqueueWriteBuffer(command_queue, device_winning_nonce[gpuid], CL_TRUE, 0, sizeof(uint32_t), &host_winning_nonce, 0, NULL, NULL);
-	clEnqueueWriteBuffer(command_queue, device_is_winning[gpuid], CL_TRUE, 0, sizeof(uint32_t), &host_is_winning, 0, NULL, NULL);
+    clEnqueueWriteBuffer(command_queue, device_input[gpuid], CL_FALSE, 0, len, input, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, device_winning_nonce[gpuid], CL_FALSE, 0, sizeof(uint32_t), &host_winning_nonce, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, device_is_winning[gpuid], CL_FALSE, 0, sizeof(uint32_t), &host_is_winning, 0, NULL, NULL);
 	clEnqueueWriteBuffer(command_queue, device_target[gpuid], CL_TRUE, 0, 8 * sizeof(uint32_t), target, 0, NULL, NULL);
 
     // Execute the OpenCL kernel on the list
 printf("About to execute opencl kernel\n");
 fflush(stdout);
-    //size_t global_item_size = LIST_SIZE; // Process the entire lists
     size_t global_item_size = num_threads * num_blocks; // Process the entire lists
-    //size_t local_item_size = 64; // Process in groups of 64
     size_t local_item_size = num_threads; // Process in groups of 64
     CHECK_clEnqueueNDRangeKernel
 	(command_queue, kernel, 1, NULL,
