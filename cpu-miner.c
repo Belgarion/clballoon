@@ -3424,7 +3424,6 @@ void get_defconfig_path(char *out, size_t bufsize, char *argv0);
 
 int cltest(void);
 
-int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks);
 int opencl_query();
 
 int main(int argc, char *argv[]) {
@@ -3440,8 +3439,7 @@ int main(int argc, char *argv[]) {
 	rpc_pass = strdup("");
 	opt_api_allow = strdup("127.0.0.1"); /* 0.0.0.0 for all ips */
 
-	cltest();
-	balloon_opencl_init(0, 1, 1);
+	//cltest();
 	int numCuda = opencl_query();
 
 #if 0

@@ -13,6 +13,7 @@
 #define PRINT_ENDIANDATA
 uint32_t prev_pdata[20][10];
 int scanhash_balloon(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done, uint32_t num_cuda_threads, uint32_t num_cuda_blocks) {
+	printf("scanhash_balloon: thr_id: %d, num_cuda_threads: %d, num_cuda_blocks: %d\n", thr_id, num_cuda_threads, num_cuda_blocks);
 	uint32_t _ALIGN(128) hash32[8];
 	uint32_t _ALIGN(128) orighash32[8];
 	uint32_t _ALIGN(128) sslhash32[8];
@@ -52,10 +53,12 @@ int scanhash_balloon(int thr_id, struct work *work, uint32_t max_nonce, uint64_t
 	balloon_opencl_init(thr_id, num_cuda_threads, num_cuda_blocks);
 printf("after balloon_opencl_init\n");
 	if (pdata_changed) {
+		printf("pdata_changed\n");
 		balloon_reset();
 		reset_host_prebuf();
 	}
 	do {
+		printf("scanhash start compute\n");
 		be32enc(&endiandata[19], n);
 #ifdef PRINT_ENDIANDATA
 		if (n % 100 == 0) {
@@ -84,7 +87,9 @@ printf("after balloon_opencl_init\n");
 		n = winning_nonce;
 		if (is_winning) {
 			balloon_128_orig((unsigned char *)endiandata, (unsigned char*)verifyhash32);
+			printf("after second balloon_128_orig\n");
 			memcpy(hash32, verifyhash32, 32);
+			printf("after memcpy\n");
 
 			//memcpy(hash32, cudahash32, 32);
 #ifdef DEBUG_VERIFY
@@ -96,6 +101,7 @@ printf("after balloon_opencl_init\n");
 					break;
 				}
 			}
+			printf("verify_successful\n");
 			if (!verify_successful) {
 				printf("cudahash: ");
 				for (int i = 0; i < 8; i++) {
@@ -121,7 +127,7 @@ printf("after balloon_opencl_init\n");
 #endif //DEBUG
 #endif
 
-#ifdef DEBUG
+#ifdef DEBUG_OPENSSL
 		balloon_128_orig((unsigned char *)endiandata, (unsigned char*)orighash32);
 		balloon_128_openssl((unsigned char *)endiandata, (unsigned char*)sslhash32);
 		//	usleep(500000);

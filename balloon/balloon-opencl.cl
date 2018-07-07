@@ -44,14 +44,6 @@ void device_sha256_168byte(uint8_t *data, __global uint8_t *outhash);
 void device_sha256_generic(uint8_t *data, __global uint8_t *outhash, uint32_t len);
 void device_sha256_osol(const __sha256_block_t blk, __sha256_hash_t ctx);
 
-__kernel void balloon(__global int *A, __global int *B, __global int *C) {
-    // Get the index of the current element
-    int i = get_global_id(0);
-
-    // Do the operation
-    C[i] = A[i] + B[i];
-}
-
 #define __device__
 __constant const uint32_t __sha256_init[] = {
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -85,6 +77,7 @@ __device__ void cuda_hash_state_extract(const struct hash_state_lite *s, uint8_t
 }
 
 #define CUDA_OUTPUT
+//#define DEBUG
 __kernel void cudaized_multi(__global uint8_t *hs, int32_t mixrounds,
 		__global uint64_t *prebuf_le, __global uint8_t *input, uint32_t len,
 		__global uint8_t *output, int64_t s_cost, uint32_t max_nonce,
@@ -93,34 +86,18 @@ __kernel void cudaized_multi(__global uint8_t *hs, int32_t mixrounds,
 		uint32_t num_blocks, __global uint8_t *sbufs) {
 	uint32_t id = get_global_id(0);
 	uint32_t nonce = (((uint32_t)(input[76]) << 24) | ((uint32_t)(input[77]) << 16) | ((uint32_t)(input[78]) << 8) | (uint32_t)(input[79])) + id;
+#ifdef DEBUG
+	if (id % 100 == 0) {
 	printf("[device] id: %x, prebuf_le[0]: %08x, max_nonce: %x\n", id, prebuf_le[0], max_nonce);
 	printf("[device] s_cost: %d, t_cost: %d\n", s_cost, mixrounds);
-	printf("[device] input[76-79]: %02x %02x %02x %02x\n", input[76], input[77], input[78], input[79]);
-	output[0] = input[76];
-	output[1] = input[77];
-	output[2] = input[78];
-	output[3] = input[79];
-	output[4] = prebuf_le[0] & 0xff;
-	output[5] = (prebuf_le[0] & 0xff00) >> 8;
-	output[6] = (prebuf_le[0] & 0xff0000) >> 16;
-	output[7] = (prebuf_le[0] & 0xff000000) >> 24;
-	output[8] = id & 0xff;
-	output[9] = (id & 0xff00) >> 8;
-	output[10] = (id & 0xff0000) >> 16;
-	output[11] = (id & 0xff000000) >> 24;
-	output[12] = max_nonce & 0xff;
-	output[13] = (max_nonce & 0xff00) >> 8;
-	output[14] = (max_nonce & 0xff0000) >> 16;
-	output[15] = (max_nonce & 0xff000000) >> 24;
-	output[16] = 0;
-	output[17] = 1;
-	output[18] = 2;
-	output[19] = 3;
-	output[20] = 4;
-	output[21] = 5;
+	printf("[device] input[76-79]: %02x %02x %02x %02x, nonce: %x\n", input[76], input[77], input[78], input[79], nonce);
+	}
+#endif
 
 	if (nonce > max_nonce || *is_winning) {
+#ifdef DEBUG
 		printf("[device] early abort, nonce: %x > %x || is_winning(%x)\n", nonce, max_nonce, *is_winning);
+#endif
 		return;
 	}
 #ifdef TEST_SHA
@@ -134,38 +111,32 @@ __kernel void cudaized_multi(__global uint8_t *hs, int32_t mixrounds,
 	device_sha256_generic(data, output, 3);
 	printf("sha256 abc: %02x %02x %02x %02x\n", output[0], output[1], output[2], output[3]);
 #endif
+
 	uint8_t local_input[80];
 #ifdef CUDA_OUTPUT
 	uint8_t local_output[32];
 #endif
 	struct hash_state_lite local_s;
-	//memcpy((char*)local_input, (const char*)input, len);
 	for (int i = 0; i < len; local_input[i] = input[i], i++);
-	//memcpy((char*)&local_s, (const char*)hs, sizeof(struct hash_state_lite));
 
-	//uint8_t local_sbuf[4096*BLOCK_SIZE];
-	//memcpy((char*)&local_sbuf, (const char*)hs->buffer, 4096 * BLOCK_SIZE);
 	__global uint8_t *local_sbuf = hs+4096*BLOCK_SIZE*id;
-	for (int i = 0; i < 4096*BLOCK_SIZE; i++) {
-		local_sbuf[i] = sbufs[i];
-	}
+	//for (int i = 0; i < 4096*BLOCK_SIZE; i++) {
+	//	local_sbuf[i] = sbufs[i];
+	//}
 
 	local_s.buffer = local_sbuf;
-	printf("[device] local_sbuf: %02x %02x %02x %02x\n", local_sbuf[0], local_sbuf[1], local_sbuf[2], local_sbuf[3]);
 	local_s.n_blocks = 4096;
 	((uint32_t*)local_input)[19] = ((nonce & 0xff000000) >> 24) | ((nonce & 0xff0000) >> 8) | ((nonce & 0xff00) << 8) | ((nonce & 0xff) << 24);
 	local_s.counter = 0;
 	cuda_hash_state_fill(&local_s, local_input, len, mixrounds, s_cost);
-			printf("[device] local_sbuf after fill: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-					local_sbuf[0], local_sbuf[1], local_sbuf[2], local_sbuf[3], local_sbuf[4],local_sbuf[5], local_sbuf[6], local_sbuf[7], local_sbuf[8], local_sbuf[9],
-					local_sbuf[10], local_sbuf[11], local_sbuf[12], local_sbuf[13], local_sbuf[14],local_sbuf[15], local_sbuf[16], local_sbuf[17], local_sbuf[18], local_sbuf[19],
-					local_sbuf[20], local_sbuf[21], local_sbuf[22], local_sbuf[23], local_sbuf[24],local_sbuf[25], local_sbuf[26], local_sbuf[27], local_sbuf[28], local_sbuf[29],
-					local_sbuf[30], local_sbuf[31]);
 	cuda_hash_state_mix (&local_s, mixrounds, prebuf_le);
 #ifdef CUDA_OUTPUT
 	cuda_hash_state_extract (&local_s, local_output);
-	for (int i = 0; i < 32; output[i] = local_output[i], i++);
-	printf("[device] output[0-3]: %02x %02x %02x %02x\n", output[0], output[1], output[2], output[3]);
+	//printf("[device] id: %d\n", id);
+	if (id == 0) {
+		for (int i = 0; i < 32; output[i] = local_output[i], i++);
+		//printf("[device] output[0-3]: %02x %02x %02x %02x\n", output[0], output[1], output[2], output[3]);
+	}
 	if (((uint32_t*)local_output)[7] < device_target[7]) {
 #else
 	if (((uint32_t*)(local_sbuf+(4095<<5)))[7] < device_target[7]) {
@@ -174,6 +145,7 @@ __kernel void cudaized_multi(__global uint8_t *hs, int32_t mixrounds,
 #ifdef DEBUG
 		printf("[Device %d] Winning nonce: %u\n", gpuid, nonce);
 #endif
+		printf("[Device %d] Winning nonce: %u\n", gpuid, nonce);
 		*winning_nonce = nonce;
 		*is_winning = 1;
 #ifdef CUDA_OUTPUT
@@ -234,7 +206,6 @@ __device__ void cuda_hash_state_fill (struct hash_state_lite *s, const uint8_t *
   memcpy((char*)dp, (const char*)&t_cost, 4);
 
   device_sha256_generic(data, s->buffer, 132);
-	printf("[device] fill sha256: %02x %02x %02x %02x\n", s->buffer[0], s->buffer[1], s->buffer[2], s->buffer[3]);
   s->counter++;
   cuda_expand (&s->counter, s->buffer, s->n_blocks);
 }
@@ -245,21 +216,11 @@ __device__ void cuda_hash_state_fill (struct hash_state_lite *s, const uint8_t *
 __device__ void cuda_hash_state_mix (struct hash_state_lite *s, int32_t mixrounds, __global uint64_t *prebuf_le) {
 	__global uint64_t *buf = prebuf_le;
 	__global uint8_t *sbuf = s->buffer;
-	printf("[device] mix sbuf: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			sbuf[0], sbuf[1], sbuf[2], sbuf[3], sbuf[4],sbuf[5], sbuf[6], sbuf[7], sbuf[8], sbuf[9],
-			sbuf[10], sbuf[11], sbuf[12], sbuf[13], sbuf[14],sbuf[15], sbuf[16], sbuf[17], sbuf[18], sbuf[19],
-			sbuf[20], sbuf[21], sbuf[22], sbuf[23], sbuf[24],sbuf[25], sbuf[26], sbuf[27], sbuf[28], sbuf[29],
-			sbuf[30], sbuf[31]);
 
 	//int32_t n_blocks = s->n_blocks;
 	const int32_t n_blocks = 4096;
 	mixrounds = 4;
 	__global uint8_t *last_block = (sbuf + (BLOCK_SIZE*(n_blocks-1)));
-	printf("[orig] mix last_block: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			last_block[0], last_block[1], last_block[2], last_block[3], last_block[4],last_block[5], last_block[6], last_block[7], last_block[8], last_block[9],
-			last_block[10], last_block[11], last_block[12], last_block[13], last_block[14],last_block[15], last_block[16], last_block[17], last_block[18], last_block[19],
-			last_block[20], last_block[21], last_block[22], last_block[23], last_block[24],last_block[25], last_block[26], last_block[27], last_block[28], last_block[29],
-			last_block[30], last_block[31]);
 	__global uint8_t *blocks[5];
 	unsigned char data[8 + BLOCK_SIZE * 5];
 	unsigned char *db1 = data + 8;
@@ -282,19 +243,12 @@ __device__ void cuda_hash_state_mix (struct hash_state_lite *s, int32_t mixround
 			// New sha256
 			//block = (uint8_t**)blocks;
 			memcpy((char*)data, (const char*)&s->counter, 8);
-			printf("s->counter: %16x, data: %02x %02x %02x %02x %02x %02x %02x %02x\n", s->counter, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]);
 			for (int j = 0; j < BLOCK_SIZE; db1[j] = blocks[0][j], j++);
 			for (int j = 0; j < BLOCK_SIZE; db2[j] = blocks[1][j], j++);
 			for (int j = 0; j < BLOCK_SIZE; db3[j] = blocks[2][j], j++);
 			for (int j = 0; j < BLOCK_SIZE; db4[j] = blocks[3][j], j++);
 			for (int j = 0; j < BLOCK_SIZE; db5[j] = blocks[4][j], j++);
 			device_sha256_168byte(data, (__global uint8_t*)blocks[1]);
-			printf("[device] step 0 sha output: %02x %02x %02x %02x\n", blocks[1][0], blocks[1][1], blocks[1][2], blocks[1][3]);
-			printf("[device] step 0: block[0]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-					blocks[0][0], blocks[0][1], blocks[0][2], blocks[0][3], blocks[0][4],blocks[0][5], blocks[0][6], blocks[0][7], blocks[0][8], blocks[0][9],
-					blocks[0][10], blocks[0][11], blocks[0][12], blocks[0][13], blocks[0][14],blocks[0][15], blocks[0][16], blocks[0][17], blocks[0][18], blocks[0][19],
-					blocks[0][20], blocks[0][21], blocks[0][22], blocks[0][23], blocks[0][24],blocks[0][25], blocks[0][26], blocks[0][27], blocks[0][28], blocks[0][29],
-					blocks[0][30], blocks[0][31]);
 			s->counter++;
 		}
 		for (size_t i = 1; i < n_blocks; i++) {
@@ -316,19 +270,10 @@ __device__ void cuda_hash_state_mix (struct hash_state_lite *s, int32_t mixround
 			for (int j = 0; j < BLOCK_SIZE; db4[j] = blocks[3][j], j++);
 			for (int j = 0; j < BLOCK_SIZE; db5[j] = blocks[4][j], j++);
 			device_sha256_168byte(data, (__global uint8_t*)blocks[1]);
-			if (i % 400 == 0) {
-			printf("[device] step %d sha output: %02x %02x %02x %02x\n", i, blocks[1][0], blocks[1][1], blocks[1][2], blocks[1][3]);
-			printf("[device] step %d: block[0]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-					i, blocks[0][0], blocks[0][1], blocks[0][2], blocks[0][3], blocks[0][4],blocks[0][5], blocks[0][6], blocks[0][7], blocks[0][8], blocks[0][9],
-					blocks[0][10], blocks[0][11], blocks[0][12], blocks[0][13], blocks[0][14],blocks[0][15], blocks[0][16], blocks[0][17], blocks[0][18], blocks[0][19],
-					blocks[0][20], blocks[0][21], blocks[0][22], blocks[0][23], blocks[0][24],blocks[0][25], blocks[0][26], blocks[0][27], blocks[0][28], blocks[0][29],
-					blocks[0][30], blocks[0][31]);
-			}
 			s->counter++;
 		}
 		//s->has_mixed = true;
 	}
-	printf("Used prebuf len: %d\n", buf-prebuf_le);
 #ifdef DEBUG_CUDA
 	if (buf - prebuf_le > 49152) printf("prebuf_le max used: %d, mixrounds = %d, n_blocks = %d\n", buf - prebuf_le, mixrounds, n_blocks);
 #endif
@@ -391,10 +336,12 @@ __device__ void device_sha256_168byte(uint8_t *data, __global uint8_t *outhash) 
 }
 
 __device__ void device_sha256_generic(uint8_t *data, __global uint8_t *outhash, uint32_t len) {
+#ifdef DEBUG
 	if (len > 184) {
 		printf("Longer than 3 blocks (184bytes), sha256_generic not made for this..\n");
 		len = 184;
 	}
+#endif
 	uint8_t num_blocks = len/64 + 1;
 	uint32_t tot_len = num_blocks*512 - 65; // 64bit header
 	uint32_t num_padding = (tot_len - len*8)/8;

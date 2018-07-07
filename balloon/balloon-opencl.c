@@ -206,7 +206,9 @@ int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks) {
 
 		// Build the program
 	printf("building program\n");
-		cl_int ret = clBuildProgram(program, 1, devices, "-cl-opt-disable -g", NULL, NULL);
+		//cl_int ret = clBuildProgram(program, 1, devices, "-cl-opt-disable -g", NULL, NULL);
+		cl_int ret = clBuildProgram(program, 1, devices, NULL, NULL, NULL);
+		//cl_int ret = clBuildProgram(program, 1, devices, "-g", NULL, NULL);
 		if (ret) {
 			printf("clBuildprogram ret: %d\n", ret);
 		//cl_int ret0=ret; XX print it?
@@ -240,6 +242,7 @@ int balloon_opencl_init(int gpuid, uint32_t num_threads, uint32_t num_blocks) {
 		device_target[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, 8*sizeof(uint32_t), NULL, NULL);
 		device_out[gpuid] = clCreateBuffer(context, CL_MEM_WRITE_ONLY, BLOCK_SIZE * sizeof(uint8_t), NULL, NULL);
 		device_input[gpuid] = clCreateBuffer(context, CL_MEM_READ_ONLY, /*len*/80, NULL, NULL);
+		printf("Allocating %d bytes to device_hs_sbufs (num_threads %d, num_blocks %d)\n", num_threads*num_blocks*4096*BLOCK_SIZE, num_threads, num_blocks);
 		device_hs_sbufs[gpuid] = clCreateBuffer(context, CL_MEM_READ_WRITE, num_threads * num_blocks * 4096 * BLOCK_SIZE, NULL, NULL);
 
 		a_mem_obj = clCreateBuffer(context, CL_MEM_READ_WRITE, 10, NULL, NULL);
@@ -394,7 +397,6 @@ uint32_t balloon_128_cuda (int gpuid, unsigned char *input, unsigned char *outpu
 
 
 uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, int32_t len, int64_t s_cost, int32_t t_cost, uint32_t *target, uint32_t max_nonce, uint32_t num_threads, uint32_t *ret_is_winning, uint32_t num_blocks) {
-	usleep(10000000);
 #ifdef DEBUG
 	printf("DEBUG GPU %d: entering cuda_balloon\n", gpuid);
 #endif
@@ -409,13 +411,7 @@ uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, in
 	struct balloon_options opts;
 	struct hash_state s;
 	balloon_init(&opts, s_cost, t_cost);
-	printf("[host]input: ");
-	for (int i = 0; i < len; printf("%02x ", input[i]), i++);
-	printf("\n");
 	hash_state_init(&s, &opts, input);
-	printf("[host] s.buffer: ");
-	for (int i = 0; i < /*s.n_blocks*/10*BLOCK_SIZE; printf("%02x ", s.buffer[i]), i++);
-	printf("\n");
 	fill_prebuf(&s, gpuid);
 	uint8_t *pc_sbuf = s.buffer;
 
@@ -425,80 +421,63 @@ uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, in
 
 	uint32_t first_nonce = ((input[76] << 24) | (input[77] << 16) | (input[78] << 8) | input[79]);
 
-	//printf("cuda_ballon, gpu %d, start_nonce: %d, max_nonce: %d\n", gpuid, first_nonce, max_nonce);
+	printf("cuda_ballon, gpu %d, start_nonce: %d, max_nonce: %d\n", gpuid, first_nonce, max_nonce);
 
-#if 0
-	checkCudaErrors(cudaMemcpy((void**)device_sbuf[gpuid], (void**)s.buffer, s.n_blocks * BLOCK_SIZE, cudaMemcpyHostToDevice));
-
-	s.buffer = device_sbuf[gpuid];
-	checkCudaErrors(cudaMemcpy((void**)device_s[gpuid], (void**)&s, sizeof(struct hash_state), cudaMemcpyHostToDevice));
-
-	checkCudaErrors(cudaMemcpy((void**)device_input[gpuid], (void**)input, len, cudaMemcpyHostToDevice));
-#endif
 	uint32_t host_winning_nonce = 0;
 	uint32_t host_is_winning = 0;
 
-#if 0
-	checkCudaErrors(cudaMemcpy(device_target[gpuid], target, 8 * sizeof(uint32_t), cudaMemcpyHostToDevice));
-
-	checkCudaErrors(cudaMemcpy((void**)device_winning_nonce[gpuid], (void**)&host_winning_nonce, sizeof(uint32_t), cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy((void**)device_is_winning[gpuid], (void**)&host_is_winning, sizeof(uint32_t), cudaMemcpyHostToDevice));
-	cudaized_multi << <num_blocks, num_threads >> > (device_s[gpuid], t_cost, device_prebuf_le[gpuid], device_input[gpuid], len, device_out[gpuid], s_cost, max_nonce, gpuid, device_winning_nonce[gpuid], num_threads, device_target[gpuid], device_is_winning[gpuid], num_blocks, device_sbufs[gpuid]);
-	checkCudaErrors(cudaPeekAtLastError());
-
-	//wait for cuda device
-	checkCudaErrors(cudaDeviceSynchronize());
-	checkCudaErrors(cudaMemcpy((void*)&host_winning_nonce, (void*)device_winning_nonce[gpuid], sizeof(uint32_t), cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy((void*)&host_is_winning, (void*)device_is_winning[gpuid], sizeof(uint32_t), cudaMemcpyDeviceToHost));
-#endif
 	printf("Copying data to opencl\n");
 
 	// s_cost
 	cl_long cl_s_cost = s_cost;
     clSetKernelArg(kernel, 6, sizeof(cl_long), &cl_s_cost);
 	printf("s_cost: %d, t_cost: %d\n", s_cost, t_cost);
+	// max_nonce
+	cl_int cl_max_nonce = max_nonce;
+    clSetKernelArg(kernel, 7, sizeof(cl_int), &cl_max_nonce);
 
     clEnqueueWriteBuffer(command_queue, device_input[gpuid], CL_TRUE, 0, len, input, 0, NULL, NULL);
     clEnqueueWriteBuffer(command_queue, device_prebuf_le[gpuid], CL_TRUE, 0, PREBUF_LEN, host_prebuf_le[gpuid], 0, NULL, NULL);
-	printf("[host] s.buffer: ");
-	for (int i = 0; i < /*s.n_blocks*/10*BLOCK_SIZE; printf("%02x ", s.buffer[i]), i++);
-	printf("\n");
 	clEnqueueWriteBuffer(command_queue, device_sbuf[gpuid], CL_TRUE, 0, s.n_blocks*BLOCK_SIZE, s.buffer, 0, NULL, NULL);
-	printf("s.buffer: %02x %02x %02x %02x\n", s.buffer[0], s.buffer[1], s.buffer[2], s.buffer[3]);
 	clEnqueueWriteBuffer(command_queue, device_winning_nonce[gpuid], CL_TRUE, 0, sizeof(uint32_t), &host_winning_nonce, 0, NULL, NULL);
 	clEnqueueWriteBuffer(command_queue, device_is_winning[gpuid], CL_TRUE, 0, sizeof(uint32_t), &host_is_winning, 0, NULL, NULL);
+	clEnqueueWriteBuffer(command_queue, device_target[gpuid], CL_TRUE, 0, 8 * sizeof(uint32_t), target, 0, NULL, NULL);
 
     // Execute the OpenCL kernel on the list
 printf("About to execute opencl kernel\n");
+fflush(stdout);
     //size_t global_item_size = LIST_SIZE; // Process the entire lists
-    size_t global_item_size = 1; // Process the entire lists
+    size_t global_item_size = num_threads * num_blocks; // Process the entire lists
     //size_t local_item_size = 64; // Process in groups of 64
-    size_t local_item_size = 1; // Process in groups of 64
+    size_t local_item_size = num_threads; // Process in groups of 64
     CHECK_clEnqueueNDRangeKernel
 	(command_queue, kernel, 1, NULL, 
 	 &global_item_size, &local_item_size, 0, NULL, NULL,
 	 err_clEnqueueNDRangeKernel);
 
 	printf("Waiting for kernel to complete\n");
+	fflush(stdout);
 
     CHECK_clFinish(command_queue, err_clEnqueueNDRangeKernel);
 printf("Opencl kernel done\n");
+	fflush(stdout);
 
     CHECK_clEnqueueReadBuffer(command_queue, device_out[gpuid], CL_TRUE, 0, 
 			      BLOCK_SIZE * sizeof(uint8_t), output, 0, NULL, NULL,
 			      err_clEnqueueReadBuffer);
-	printf("after read buffer\n");
 	printf("output: ");
 	for (int i = 0; i < 32; i++) {
 		printf("%02x ", output[i]);
 	}
 	printf("\n");
-	printf("input[76] = %02x\n", input[76]);
-	printf("input[77] = %02x\n", input[77]);
-	printf("input[78] = %02x\n", input[78]);
-	printf("input[79] = %02x\n", input[79]);
-	printf("host_prebuf_le[0] = %08x\n", host_prebuf_le[gpuid][0]);
-	printf("max_nonce = %08x\n", max_nonce);
+    CHECK_clEnqueueReadBuffer(command_queue, device_winning_nonce[gpuid], CL_TRUE, 0, 
+			      sizeof(uint32_t), &host_winning_nonce, 0, NULL, NULL,
+			      err_clEnqueueReadBuffer);
+    CHECK_clEnqueueReadBuffer(command_queue, device_is_winning[gpuid], CL_TRUE, 0, 
+			      sizeof(uint32_t), &host_is_winning, 0, NULL, NULL,
+			      err_clEnqueueReadBuffer);
+
+	printf("after read buffer\n");
 
 #ifdef DEBUG
 	if (host_is_winning) {

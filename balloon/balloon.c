@@ -265,7 +265,6 @@ inline int hash_state_fill (struct hash_state *s, const uint8_t *in, size_t inle
   SHA256_Update (&c, &s->opts->s_cost, 8);
   SHA256_Update (&c, &s->opts->t_cost, 4);
   SHA256_Final (s->buffer, &c);
-	printf("[orig] fill sha256: %02x %02x %02x %02x\n", s->buffer[0], s->buffer[1], s->buffer[2], s->buffer[3]);
   s->counter++;
   expand (&s->counter, s->buffer, s->n_blocks);
 }
@@ -451,18 +450,9 @@ void balloon_orig(unsigned char *input, unsigned char *output, int32_t len, int6
   gettimeofday(&tv1, NULL);
   balloon_init (&opts, s_cost, t_cost);
   gettimeofday(&tv2, NULL);
-	printf("[orig]input: ");
-	for (int i = 0; i < len; printf("%02x ", input[i]), i++);
-	printf("\n");
   hash_state_init (&s, &opts, input);
-	printf("[orig] s.buffer: ");
-	for (int i = 0; i < /*s.n_blocks*/10*BLOCK_SIZE; printf("%02x ", s.buffer[i]), i++);
-	printf("\n");
   gettimeofday(&tv3, NULL);
   hash_state_fill (&s, input, len);
-	printf("[orig] s.buffer after fill: ");
-	for (int i = 0; i < /*s.n_blocks*/10*BLOCK_SIZE; printf("%02x ", s.buffer[i]), i++);
-	printf("\n");
   gettimeofday(&tv4, NULL);
   hash_state_mix_orig(&s, t_cost);
   gettimeofday(&tv5, NULL);
@@ -524,21 +514,6 @@ void hash_state_mix_orig(struct hash_state *s, int32_t mixrounds) {
 		//printf("lebuf: %lx\n", prebuf_le[2]);
 	}
 	uint64_t *buf = prebuf_le;
-	uint8_t *sbuf = s->buffer;
-	printf("[orig] mix sbuf: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			sbuf[0], sbuf[1], sbuf[2], sbuf[3], sbuf[4],sbuf[5], sbuf[6], sbuf[7], sbuf[8], sbuf[9],
-			sbuf[10], sbuf[11], sbuf[12], sbuf[13], sbuf[14],sbuf[15], sbuf[16], sbuf[17], sbuf[18], sbuf[19],
-			sbuf[20], sbuf[21], sbuf[22], sbuf[23], sbuf[24],sbuf[25], sbuf[26], sbuf[27], sbuf[28], sbuf[29],
-			sbuf[30], sbuf[31]);
-	printf("[orig] s.buffer: ");
-	for (int i = 0; i < /*s->n_blocks*/10*BLOCK_SIZE; printf("%02x ", s->buffer[i]), i++);
-	printf("\n");
-	uint8_t *last_block = (sbuf + (BLOCK_SIZE*(s->n_blocks-1)));
-	printf("[orig] mix last_block: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			last_block[0], last_block[1], last_block[2], last_block[3], last_block[4],last_block[5], last_block[6], last_block[7], last_block[8], last_block[9],
-			last_block[10], last_block[11], last_block[12], last_block[13], last_block[14],last_block[15], last_block[16], last_block[17], last_block[18], last_block[19],
-			last_block[20], last_block[21], last_block[22], last_block[23], last_block[24],last_block[25], last_block[26], last_block[27], last_block[28], last_block[29],
-			last_block[30], last_block[31]);
 	uint64_t neighbor;
 	int32_t n_blocks = s->n_blocks;
 	//printf("n_blocks: %d\n", n_blocks);
@@ -556,14 +531,6 @@ void hash_state_mix_orig(struct hash_state *s, int32_t mixrounds) {
 			*(blocks + 3) = (s->buffer + (BLOCK_SIZE * (*(buf++) % n_blocks)));
 			*(blocks + 4) = (s->buffer + (BLOCK_SIZE * (*(buf++) % n_blocks)));
 			compress (&s->counter, cur_block, blocks, 5);
-			if (i % 400 == 0) {
-			printf("[host] step %d sha output: %02x %02x %02x %02x\n", i, cur_block[0], cur_block[1], cur_block[2], cur_block[3]);
-			printf("[host] step %d: block[0]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-					i, blocks[0][0], blocks[0][1], blocks[0][2], blocks[0][3], blocks[0][4],blocks[0][5], blocks[0][6], blocks[0][7], blocks[0][8], blocks[0][9],
-					blocks[0][10], blocks[0][11], blocks[0][12], blocks[0][13], blocks[0][14],blocks[0][15], blocks[0][16], blocks[0][17], blocks[0][18], blocks[0][19],
-					blocks[0][20], blocks[0][21], blocks[0][22], blocks[0][23], blocks[0][24],blocks[0][25], blocks[0][26], blocks[0][27], blocks[0][28], blocks[0][29],
-					blocks[0][30], blocks[0][31]);
-			}
 		}
 #ifdef TIMED
 		gettimeofday(&tv2, NULL);
