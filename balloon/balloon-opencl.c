@@ -61,19 +61,6 @@ uint8_t syncmode_set[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 
 int opencl_query() {
 	DECLARE_CHECK;
-	/*cudaGetDeviceCount(&nDevices);
-	for (int i = 0; i < nDevices; i++) {
-		cudaDeviceProp prop;
-		cudaGetDeviceProperties(&prop, i);
-		printf("Device Number: %d\n", i);
-		printf("  Device name: %s\n", prop.name);
-		printf("  Memory Clock Rate (KHz): %d\n",
-			prop.memoryClockRate);
-		printf("  Memory Bus Width (bits): %d\n",
-			prop.memoryBusWidth);
-		printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
-			2.0*prop.memoryClockRate*(prop.memoryBusWidth / 8) / 1.0e6);
-	}*/
     // Get platform and device information
     cl_platform_id platform_id = NULL;
     cl_device_id device_id = NULL;
@@ -390,12 +377,6 @@ uint32_t cuda_balloon(int gpuid, unsigned char *input, unsigned char *output, in
 #endif
 	DECLARE_CHECK;
 
-	//checkCudaErrors(cudaSetDevice(gpuid));
-	/*printf("input: ");
-	for (int i = 0; i < len; i++) {
-		printf("%02x ", input[i]);
-	}
-	printf("\n");*/
 	struct balloon_options opts;
 	struct hash_state s;
 	balloon_init(&opts, s_cost, t_cost);
